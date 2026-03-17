@@ -40,18 +40,18 @@ Pipelining might seem uneccessary because Nexys operates at 100 MHz clock freque
 IR Sensor(s)
      │
      ▼
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │  S1 Capture │->R->│ S2 Measure  │->R->│ S3 Compute  │->R->│ S4 Display  │
-│  2-FF sync  │   │ Timer / cnt │   │ Fixed-point │   │ Bin -> BCD   │
-│  Edge detect│   │ Window latch│   │ div Q16.8   │   │ 7-seg mux   │
-└─────────────┘   └─────────────┘   └─────────────┘   └─────────────┘
+│  2-FF sync  │     │ Timer / cnt │     │ Fixed-point │     │ Bin -> BCD  │
+│  Edge detect│     │ Window latch│     │ div Q16.8   │     │ 7-seg mux   │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
                          │                  ▲
                          ▼                  │
-                  ┌─────────────────────────────────┐
-                  │        FSM — Control Path       │
-                  │  IDLE->ARMED->MEASURING->COMPUTING │
-                  │  ->DISPLAYING->IDLE               │
-                  └─────────────────────────────────┘
+                  ┌─────────────────────────────────────┐
+                  │        FSM — Control Path           │
+                  │  IDLE->ARMED->MEASURING->COMPUTING  │
+                  │  ->DISPLAYING->IDLE                 │
+                  └─────────────────────────────────────┘
                          │
                          ▼
                   ┌─────────────────────────────────┐
