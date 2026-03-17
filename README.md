@@ -3,7 +3,7 @@
 Real-time object speed detection on the Nexys A7 FPGA.
 
 IR sensors feed a 4-stage pipelined datapath; capture, measure, compute, display; with FSM-based control, fixed-point arithmetic, and live 7-segment output. Built in RTL Verilog and deployed on Nexys A7
-AMD Artix™ 7 FPGA; using [Vivado](https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vivado.html) . 
+AMD Artix™ 7 FPGA; using [AMD Vivado](https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vivado.html) . 
 
 [Nexys A7 | Reference](https://digilent.com/reference/programmable-logic/nexys-a7/reference-manual)
 
