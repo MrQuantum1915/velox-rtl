@@ -11,10 +11,9 @@ AMD Artix™ 7 FPGA; using [AMD Vivado](https://www.amd.com/en/products/software
 
 ## Details
 
-**velox-rtl** measures the speed of a physical object passing through an IR sensor gate. Two operating modes are supported:
+**velox-rtl** measures the speed of a physical object passing through an IR sensor gate in linear mode using two sensors spaced a fixed distance apart.
 
-- **Linear mode**: two IR sensors spaced a fixed distance apart. A timer starts on the first trigger and stops on the second. Speed is computed as: $$v = \frac{d}{\Delta{t}}$$
-- **Rotational mode**: a single IR sensor facing a slotted or reflective wheel. Pulses are counted over a 1 second window and converted to RPM.
+- **Linear mode**: a timer starts on the first trigger and stops on the second. Speed is computed as: $$v = \frac{d}{\Delta{t}}$$
 
 The system is fully pipelined: while one object's speed is being computed (stage 3), the next object's pulse interval is still being measured (stage 2). Multiple objects can be in-flight through the pipeline simultaneously.
 
@@ -28,8 +27,8 @@ Pipelining might seem uneccessary because Nexys operates at 100 MHz clock freque
 |-----------|--------|
 | FPGA Board | Digilent Nexys A7 (AMD Artix-7 XC7A100T) |
 | Clock | 100 MHz onboard oscillator |
-| Sensors | IR break-beam or reflective sensors (2× for linear, 1× for rotational) |
-| Input | SW[0] — mode select · SW[1] — unit select (m/s vs km/h) |
+| Sensors | 2× IR break-beam or reflective sensors |
+| Input | SW[0] — unit select (m/s vs km/h) |
 | Output | 8-digit 7-segment display · LED[15:0] status indicators |
 
 ---
@@ -67,8 +66,8 @@ IR Sensor(s)
 | Stage | Module | Function |
 |-------|--------|----------|
 | S1: Capture | `input_capture.v` | Two-stage synchronizer + rising-edge pulse generator. Eliminates metastability on async IR inputs. |
-| S2: Measure | `measurement.v` | Linear: timestamps Δt between two sensor edges. Rotational: counts pulses in a 1-second window using a clock-divided strobe. |
-| S3: Compute | `speed_compute.v` | Iterative restoring divider in Q16.8 fixed-point format. Scales result to m/s or km/h based on SW[1]. |
+| S2: Measure | `measurement.v` | Timestamps Δt between two sensor edges. |
+| S3: Compute | `speed_compute.v` | Iterative restoring divider in Q16.8 fixed-point format. Scales result to m/s or km/h based on SW[0]. |
 | S4: Display | `seg7_display.v` | Binary-to-BCD conversion (double dabble algorithm), 8-digit 7-segment multiplexed at 500 Hz. |
 
 Metastability issue: The IR sensor signal is async with respect to clock of Nexys FGPA. When FPGA tries to read that signal, it might catch it right in the middle of a transition (neither 0 nor 1 yet). The flip-flop doesn't know what value to latch and can output garbage for an unpredictable amount of time. 
@@ -80,7 +79,7 @@ The fix is **2-FF synchronizer**: passing the signal through two flip-flops in s
 ```
 IDLE ──(sensor armed)──► ARMED ──(first trigger)──► MEASURING
                                                           │
-                                          (second trigger / window end)
+                                                 (second trigger)
                                                           ▼
                                                      COMPUTING
                                                           │
@@ -112,7 +111,6 @@ velox-rtl/
 │   ├── seg7_display.v      # S4: BCD + 7-segment mux
 │   ├── fsm_control.v       # FSM control path
 │   ├── datapath.v          # Datapath registers and muxes
-│   ├── clock_divider.v     # 100 MHz -> 1 Hz window strobe
 │   └── debouncer.v         # Switch input debouncer
 ├── constraints/
 │   └── velox-rtl.xdc      # Nexys A7 pin assignments
@@ -129,9 +127,8 @@ velox-rtl/
 |--------|-----|----------|
 | `clk` | E3 | 100 MHz system clock |
 | `ir_sensor[0]` | PMOD JA[0] | First IR sensor |
-| `ir_sensor[1]` | PMOD JA[1] | Second IR sensor (linear mode) |
-| `sw[0]` | J15 | Mode select (0=linear, 1=rotational) |
-| `sw[1]` | L16 | Unit select (0=m/s, 1=km/h) |
+| `ir_sensor[1]` | PMOD JA[1] | Second IR sensor |
+| `sw[0]` | J15 | Unit select (0=m/s, 1=km/h) |
 | `btnc` | N17 | System reset |
 | `seg_an[7:0]` | — | 7-segment anodes (active low) |
 | `seg_cat[6:0]` | — | 7-segment cathodes (active low) |
@@ -148,23 +145,22 @@ velox-rtl/
 | `LED[0]` | Sensor 0 active |
 | `LED[1]` | Sensor 1 active |
 | `LED[3:2]` | FSM state (binary) |
-| `LED[4]` | Mode (0=linear, 1=RPM) |
-| `LED[5]` | Unit (0=m/s, 1=km/h) |
-| `LED[6]` | Divider busy |
-| `LED[7]` | New result ready |
+| `LED[4]` | Unit (0=m/s, 1=km/h) |
+| `LED[5]` | Divider busy |
+| `LED[6]` | New result ready |
 
 ---
 
 ## 7-Segment Display Layout
 
 ```
-[ RPM / m/s ]  [ _ _ _ . _ _ ]  [ mode ]
-  digit[7]      digits[6:1]      digit[0]
+[ unit ]  [ _ _ _ . _ _ ]  [ status ]
+ digit[7]   digits[6:1]     digit[0]
 ```
 
 - Digits 6–1: speed value with decimal point at digit 3
-- Digit 7: unit glyph (`r` = RPM, `S` = m/s, `C` = km/h)
-- Digit 0: mode indicator (`L` = linear, `o` = rotational)
+- Digit 7: unit glyph (`S` = m/s, `C` = km/h)
+- Digit 0: status/placeholder character defined by display logic
 
 ---
 
@@ -204,11 +200,7 @@ vivado -source scripts/build.tcl
 | Hazard handling | Pipeline stall on divider multi-cycle latency |
 | Fixed-point arithmetic | Q16.8 restoring divider in `speed_compute.v` |
 | Metastability mitigation | 2-FF synchronizer in `input_capture.v` |
-| Clock domain management | `clock_divider.v` for RPM window strobe |
-
-Clocl domain issue: For RPM mode we need to count pulses over exactly 1 second. So build a counter that counts up to 100,000,000 and resets. That generates a single 1 cycle pulse every second = 1 second window boundary. 
-
-$\therefore$ deriving a slower timing signal from the main clock.
+| Clock domain management | Single 100 MHz system clock |
 
 ---
 
