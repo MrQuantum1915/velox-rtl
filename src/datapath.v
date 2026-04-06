@@ -65,14 +65,13 @@ module datapath #(
     // =========================================================================
     // Speed compute stage
     // =========================================================================
-    // Pop from FIFO whenever it is non-empty and speed_compute is ready.
-    // speed_compute accepts a new value every cycle (4-stage pipeline, no
-    // back-pressure).  We use a simple register to track whether we have
-    // issued a read that hasn't been consumed yet.
+    // Pop from FIFO whenever it is non-empty, we aren't currently waiting for
+    // a pop to process, AND the downstream compute unit is ready.
     // =========================================================================
     reg pop_pending;   // 1 = data was popped but not yet presented to compute
+    wire speed_ready;  // Handshake from compute unit
 
-    assign fifo_rd_en = !fifo_empty && !pop_pending;
+    assign fifo_rd_en = !fifo_empty && !pop_pending && speed_ready;
 
     // One-cycle delay: data appears on fifo_rd_data the cycle after rd_en
     reg        compute_valid;
@@ -84,26 +83,21 @@ module datapath #(
             compute_valid <= 1'b0;
             compute_dt    <= 32'b0;
         end else begin
-            if (fifo_rd_en) begin
-                pop_pending   <= 1'b1;
-            end else begin
-                pop_pending   <= 1'b0;
-            end
+            // Track the 1-cycle read latency
+            pop_pending   <= fifo_rd_en;
             compute_valid <= pop_pending;
             compute_dt    <= pop_pending ? fifo_rd_data : compute_dt;
         end
     end
 
     speed_compute #(
-        .DIST_CM   (DIST_CM),
-        .CLK_MHZ   (100),
-        .LUT_BITS  (10),
-        .FRAC_BITS (20)
+        .DIST_CM   (DIST_CM)
     ) u_speed (
         .clk        (clk),
         .rst_n      (rst_n),
         .delta_t    (compute_dt),
         .data_valid (compute_valid),
+        .ready      (speed_ready),   // NEW: Pipeline back-pressure
         .speed_cms  (speed_cms),
         .speed_valid(speed_valid),
         .too_fast   (too_fast)
