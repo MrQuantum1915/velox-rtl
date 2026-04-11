@@ -22,6 +22,7 @@ module test_speedometer_tb;
     wire timer_reset;
     wire [8:0] pulse_count;
     wire [7:0] speed_kmh;
+    integer i;
 
 
     // ============ DEVICE UNDER TEST ============
@@ -86,18 +87,18 @@ module test_speedometer_tb;
         $display("========================================");
         $display("\n");
 
-        reset_btn = 1;  // Button released (active HIGH = not pressed)
+        reset_btn = 0;  // Button released (reset inactive)
         ir1 = 0;
         ir2 = 0;
 
-        #100 ns;
+        #100;
 
-        // ===== PRESS RESET BUTTON =====
-        $display("[TIME: %t] Pressing reset button...", $time);
-        reset_btn = 0;  // Press button (active LOW logic internally)
-        #100 ns;
-        reset_btn = 1;  // Release button
-        #100 ns;
+        // ===== APPLY RESET =====
+        $display("[TIME: %t] Applying reset...", $time);
+        reset_btn = 1;  // Assert reset (active HIGH)
+        #100;
+        reset_btn = 0;  // Release reset
+        #100;
 
         $display("[TIME: %t] Reset complete. Starting tests...\n", $time);
 
@@ -109,12 +110,12 @@ module test_speedometer_tb;
         $display("========================================");
         $display("Generating 100 pulses over 0.5 seconds...");
 
-        for (int i = 0; i < 100; i = i + 1) begin
-            generate_quadrature_step(2_500_000);  // Slower pulses
+        for (i = 0; i < 100; i = i + 1) begin
+            generate_quadrature_step(2500000);  // Slower pulses
         end
 
-        // Wait for measurement window to complete
-        #10_000_000;
+        // Wait for FULL measurement window (500ms + buffer)
+        #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
         $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
@@ -126,11 +127,11 @@ module test_speedometer_tb;
         // ==================================================
         // RESET BETWEEN TESTS
         // ==================================================
-        #500_000;
-        reset_btn = 0;
+        #500000;
+        reset_btn = 1;  // Assert reset
         #100;
-        reset_btn = 1;
-        #1_000_000;
+        reset_btn = 0;  // Release reset
+        #1000000;
 
         // ==================================================
         // TEST 2: MEDIUM SPEED (~75 km/h)
@@ -140,11 +141,12 @@ module test_speedometer_tb;
         $display("========================================");
         $display("Generating 150 pulses over 0.5 seconds...");
 
-        for (int i = 0; i < 150; i = i + 1) begin
-            generate_quadrature_step(1_666_667);  // Medium pulses
+        for (i = 0; i < 150; i = i + 1) begin
+            generate_quadrature_step(1666667);  // Medium pulses
         end
 
-        #10_000_000;
+        // Wait for FULL measurement window (500ms + buffer)
+        #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
         $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
@@ -156,11 +158,11 @@ module test_speedometer_tb;
         // ==================================================
         // RESET BETWEEN TESTS
         // ==================================================
-        #500_000;
-        reset_btn = 0;
+        #500000;
+        reset_btn = 1;  // Assert reset
         #100;
-        reset_btn = 1;
-        #1_000_000;
+        reset_btn = 0;  // Release reset
+        #1000000;
 
         // ==================================================
         // TEST 3: HIGH SPEED (~120 km/h) - Should trigger LED
@@ -170,11 +172,12 @@ module test_speedometer_tb;
         $display("========================================");
         $display("Generating 200 pulses over 0.5 seconds...");
 
-        for (int i = 0; i < 200; i = i + 1) begin
-            generate_quadrature_step(1_250_000);  // Faster pulses
+        for (i = 0; i < 200; i = i + 1) begin
+            generate_quadrature_step(1250000);  // Faster pulses
         end
 
-        #10_000_000;
+        // Wait for FULL measurement window (500ms + buffer)
+        #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
         $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
@@ -186,11 +189,11 @@ module test_speedometer_tb;
         // ==================================================
         // RESET BETWEEN TESTS
         // ==================================================
-        #500_000;
-        reset_btn = 0;
+        #500000;
+        reset_btn = 1;  // Assert reset
         #100;
-        reset_btn = 1;
-        #1_000_000;
+        reset_btn = 0;  // Release reset
+        #1000000;
 
         // ==================================================
         // TEST 4: VERY HIGH SPEED (~180 km/h)
@@ -200,11 +203,12 @@ module test_speedometer_tb;
         $display("========================================");
         $display("Generating 250 pulses over 0.5 seconds...");
 
-        for (int i = 0; i < 250; i = i + 1) begin
-            generate_quadrature_step(1_000_000);  // Very fast pulses
+        for (i = 0; i < 250; i = i + 1) begin
+            generate_quadrature_step(1000000);  // Very fast pulses
         end
 
-        #10_000_000;
+        // Wait for FULL measurement window (500ms + buffer)
+        #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
         $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
@@ -216,19 +220,19 @@ module test_speedometer_tb;
         // ==================================================
         // TEST 5: ZERO SPEED (No pulses)
         // ==================================================
-        #500_000;
-        reset_btn = 0;
+        #500000;
+        reset_btn = 1;  // Assert reset
         #100;
-        reset_btn = 1;
-        #1_000_000;
+        reset_btn = 0;  // Release reset
+        #1000000;
 
         $display("\n========================================");
         $display("TEST 5: ZERO SPEED (No pulses)");
         $display("========================================");
         $display("No pulses generated (stationary)...");
 
-        // Just wait for measurement window
-        #30_000_000;
+        // Wait for FULL measurement window (500ms + buffer)
+        #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
         $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
@@ -240,7 +244,7 @@ module test_speedometer_tb;
         // ==================================================
         // TEST COMPLETE
         // ==================================================
-        #1_000_000;
+        #1000000;
         $display("\n========================================");
         $display("  ALL TESTS COMPLETE");
         $display("========================================\n");
