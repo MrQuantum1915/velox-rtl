@@ -1,0 +1,141 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{url}
+
+\title{Velox-RTL: An FPGA-Based Quadrature Speedometer on the Nexys A7}
+
+\author{
+\IEEEauthorblockN{Author Name}
+\IEEEauthorblockA{
+Department of Computer Science and Engineering\\
+Institution Name\\
+City, Country\\
+email@example.com
+}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper presents Velox-RTL, a real-time speedometer implemented in RTL Verilog for the Digilent Nexys A7 FPGA board. The design targets a compact hardware-only solution for estimating motion speed from two infrared sensor channels using quadrature transitions. Instead of relying on a processor or floating-point arithmetic, the system performs pulse conditioning, fixed-window counting, integer scaling, display multiplexing, and overspeed indication directly in synchronous logic driven by the 100 MHz on-board clock. The implementation includes input glitch filtering, a 0.5 s measurement interval, a calibrated integer speed conversion path, a three-digit seven-segment display interface, and a programmable speed threshold for visual alerting. The resulting architecture is simple to synthesize, suitable for instructional FPGA workflows, and representative of how sensing, timing, arithmetic, and user feedback can be integrated in a single register-transfer-level design.
+\end{abstract}
+
+\begin{IEEEkeywords}
+FPGA, Verilog, speed measurement, quadrature sensing, Nexys A7, seven-segment display
+\end{IEEEkeywords}
+
+\section{Introduction}
+Real-time speed measurement is a common embedded-systems requirement in industrial automation, laboratory instrumentation, and educational hardware projects. Field-programmable gate arrays (FPGAs) are well suited to this task because they provide deterministic timing, parallel signal processing, and direct access to sensor interfaces without operating-system overhead.
+
+Velox-RTL implements a compact speedometer on the Digilent Nexys A7 development board using synthesizable Verilog. The project focuses on a hardware-centric data path that accepts two infrared (IR) sensor inputs, filters the incoming signals, counts forward quadrature transitions over a fixed time window, converts the resulting pulse count into a calibrated speed value, and presents the result through the on-board seven-segment display and an overspeed indicator LED. The design is intended both as a practical measurement system and as a demonstration of standard digital design techniques such as synchronous timing, counter-based measurement, display multiplexing, and threshold detection.
+
+\section{System Overview}
+The implemented top-level module, \texttt{speedometer\_top}, is clocked by the 100 MHz oscillator available on the Nexys A7 board. Two external IR channels are connected through the PMOD header and interpreted as a quadrature-like input sequence. The design counts valid forward state transitions during a fixed 0.5 s observation interval and maps the observed event rate to speed in centimeters per second.
+
+Table~\ref{tab:params} summarizes the principal implementation parameters.
+
+\begin{table}[htbp]
+\caption{Key Implementation Parameters}
+\label{tab:params}
+\centering
+\begin{tabular}{|>{\raggedright\arraybackslash}p{1.35in}|>{\raggedright\arraybackslash}p{1.65in}|}
+\hline
+Parameter & Value \\
+\hline
+Target board & Digilent Nexys A7 \\
+\hline
+FPGA family & AMD Artix-7 \\
+\hline
+System clock & 100 MHz \\
+\hline
+Sensor inputs & 2 IR channels \\
+\hline
+Measurement window & 0.5 s \\
+\hline
+Pulse counter width & 9 bits \\
+\hline
+Speed output width & 13 bits \\
+\hline
+Display output & 3 multiplexed decimal digits \\
+\hline
+Alert output & 1 red LED threshold indicator \\
+\hline
+\end{tabular}
+\end{table}
+
+At a high level, the hardware is organized as a linear signal-processing path composed of input conditioning, timing and counting, integer speed conversion, display formatting, and alert generation. All functional blocks operate within a single clock domain, which avoids clock-domain crossing complexity in the baseline implementation.
+
+\section{Hardware Architecture}
+\subsection{Input Conditioning}
+Each IR input is first passed through a simple three-sample digital filter implemented as a shift register and majority-style hold mechanism. The output changes state only after three consecutive identical samples are observed. This suppresses short glitches and sensor chatter before the signals reach the counting logic.
+
+\subsection{Measurement Window Generation}
+A dedicated clock divider creates the measurement interval. With the 100 MHz system clock, the counter rolls over after 49,999,999 cycles, producing a 0.5 s sampling window. When the terminal count is reached, the design asserts control signals that mark the end of the current observation period and reset the pulse counter for the next interval.
+
+\subsection{Quadrature Pulse Counting}
+The pulse-counting module observes the current and previous states of the two filtered IR signals. Valid forward transitions are identified using the sequence
+\begin{equation}
+00 \rightarrow 01 \rightarrow 11 \rightarrow 10 \rightarrow 00.
+\end{equation}
+Only these expected transitions increment the counter, which helps reject invalid state changes caused by noise or reverse motion. The pulse counter is implemented as a 9-bit register, allowing counts up to 511 per window before rollover.
+
+\subsection{Speed Conversion}
+The project uses a calibrated integer mapping from measured pulse count to output speed. If $N_p$ is the number of valid quadrature steps observed during one 0.5 s interval, then the implemented conversion is
+\begin{equation}
+v_{cm/s} = 16 \times N_p.
+\end{equation}
+This operation is realized as a constant multiplication in combinational logic and produces a 13-bit speed value. The constant factor of 16 acts as the calibration coefficient of the current implementation and can be updated if the sensing geometry or encoder characteristics change.
+
+\subsection{Display and Alert Logic}
+The computed speed is latched into a display register when a nonzero measurement becomes available. A hold counter preserves the last valid reading for approximately 5 s to improve readability when motion briefly ceases. The displayed value is converted into decimal hundreds, tens, and ones digits and refreshed on the seven-segment display using time-multiplexing.
+
+The display driver uses a 17-bit refresh divider, which yields a stable visual output without visible flicker. In parallel, the LED controller compares the current speed estimate against a fixed threshold of 200 cm/s and asserts the red LED when the threshold is exceeded.
+
+\section{Implementation Details}
+The complete RTL source is contained in a compact Verilog hierarchy, with the top-level module instantiating five primary functional blocks:
+
+\begin{enumerate}
+\item \texttt{ir\_filter} for input glitch suppression,
+\item \texttt{clock\_divider} for the 0.5 s timing window,
+\item \texttt{pulse\_counter} for quadrature event accumulation,
+\item \texttt{speed\_calculator} for calibrated integer conversion, and
+\item \texttt{seven\_segment\_mux} and \texttt{red\_led\_controller} for user output.
+\end{enumerate}
+
+The implementation makes deliberate use of widened registers in several places. The speed path uses 13 bits to prevent overflow during multiplication, the display hold counter uses 30 bits to represent a 5 s persistence interval at 100 MHz, and the display refresh divider uses 17 bits to obtain an appropriate scan rate for the multiplexed output. These width choices are important because undersized counters would introduce functional errors even when the surrounding logic is otherwise correct.
+
+\section{Verification Strategy}
+Behavioral verification for the project is organized around a dedicated testbench that generates quadrature-like sensor sequences at different rates. The test stimulus includes representative low-speed, medium-speed, and high-speed scenarios, along with a noisy input pattern intended to mimic sensor bounce. Waveform dumping is enabled to support inspection in a standard viewer.
+
+The verification intent is to check four behaviors: correct forward transition counting, correct end-of-window latching, correct speed scaling, and correct assertion of the overspeed LED beyond the configured threshold. Because the displayed speed is derived from counted transitions over a fixed interval, the expected response is monotonic with respect to pulse rate, which makes the design straightforward to validate in simulation.
+
+\section{Discussion}
+Velox-RTL demonstrates that useful sensor-processing functionality can be realized with modest RTL complexity. The architecture avoids microcontroller firmware and floating-point computation, instead relying on synchronous counters and integer arithmetic. This makes the design easy to understand and appropriate for introductory FPGA coursework, especially when the educational objective is to connect signal acquisition, timing, arithmetic, and display control inside one hardware design.
+
+At the same time, the current implementation reflects a calibrated pulse-rate measurement system rather than a direct physics-based time-of-flight estimator. The speed conversion constant is embedded in logic, so portability to a different wheel, encoder resolution, or sensing geometry requires recalibration. The display path is also limited to three visible decimal digits, which is sufficient for the current operating range but not ideal for larger values.
+
+\section{Future Work}
+Several improvements are natural extensions of the present design. First, the calibration factor can be replaced by a parameterized conversion model derived from known wheel circumference or object travel distance. Second, the display path can be extended to four digits and optional unit indicators. Third, synchronizer stages can be added ahead of the input filters if the external IR signals are highly asynchronous to the FPGA clock. Finally, the project could be expanded with synthesis reports, formal assertions, and hardware measurements collected directly from the Nexys A7 platform.
+
+\section{Conclusion}
+This paper described a standard RTL implementation of an FPGA-based speedometer for the Nexys A7 board. The design combines IR sensor conditioning, quadrature transition counting, fixed-window timing, integer speed conversion, seven-segment display driving, and threshold-based alerting in a single synchronous hardware system. The resulting architecture is small, direct, and well aligned with instructional FPGA development. As a project artifact, Velox-RTL provides a useful example of how sensing and user-interface logic can be integrated in Verilog without requiring a processor subsystem.
+
+\begin{thebibliography}{9}
+
+\bibitem{digilent}
+Digilent Inc., ``Nexys A7 FPGA Board Reference Manual,'' accessed Apr. 17, 2026. [Online]. Available: \url{https://digilent.com/reference/programmable-logic/nexys-a7/reference-manual}
+
+\bibitem{vivado}
+AMD, ``Vivado Design Suite,'' accessed Apr. 17, 2026. [Online]. Available: \url{https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vivado.html}
+
+\bibitem{repo}
+Velox-RTL project repository, local source files: \texttt{README.md}, \texttt{src/speedometer\_top\_nexys.v}, \texttt{sim/test\_speedometer\_tb.v}, and \texttt{constraints/nexys\_a7.xdc}.
+
+\end{thebibliography}
+
+\end{document}

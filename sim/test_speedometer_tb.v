@@ -21,7 +21,7 @@ module test_speedometer_tb;
     wire timer_done;
     wire timer_reset;
     wire [8:0] pulse_count;
-    wire [7:0] speed_kmh;
+    wire [12:0] speed_cm_s;
     integer i;
 
 
@@ -118,7 +118,7 @@ module test_speedometer_tb;
         #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
+        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
         $display("[RESULT] Pulse Count: %d", uut.pulse_count);
         $display("[RESULT] Red LED: %b (should be 0 for speed < 110 km/h)", red_led);
         $display("[RESULT] Display Segments: %7b", seg);
@@ -149,7 +149,7 @@ module test_speedometer_tb;
         #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
+        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
         $display("[RESULT] Pulse Count: %d", uut.pulse_count);
         $display("[RESULT] Red LED: %b (should be 0)", red_led);
         $display("[RESULT] Display Segments: %7b", seg);
@@ -180,7 +180,7 @@ module test_speedometer_tb;
         #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
+        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
         $display("[RESULT] Pulse Count: %d", uut.pulse_count);
         $display("[RESULT] Red LED: %b (should be 1 for speed > 110 km/h)", red_led);
         $display("[RESULT] Display Segments: %7b", seg);
@@ -211,7 +211,7 @@ module test_speedometer_tb;
         #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
+        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
         $display("[RESULT] Pulse Count: %d", uut.pulse_count);
         $display("[RESULT] Red LED: %b (should be 1)", red_led);
         $display("[RESULT] Display Segments: %7b", seg);
@@ -235,7 +235,7 @@ module test_speedometer_tb;
         #520000000;
 
         $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d km/h", uut.speed_kmh);
+        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
         $display("[RESULT] Pulse Count: %d", uut.pulse_count);
         $display("[RESULT] Red LED: %b (should be 0)", red_led);
         $display("[RESULT] Display Segments: %7b", seg);
@@ -258,7 +258,7 @@ module test_speedometer_tb;
         $dumpfile("speedometer_nexys_a7.vcd");
         $dumpvars(0, test_speedometer_tb);
         // Dump only selected signals for readability
-        $dumpvars(1, uut.speed_kmh, uut.pulse_count, uut.timer_done);
+        $dumpvars(1, uut.speed_cm_s, uut.pulse_count, uut.timer_done);
     end
 
 
@@ -266,7 +266,7 @@ module test_speedometer_tb;
     always @(posedge uut.timer_done) begin
         $display("[TIMER] Measurement window closed at time %t", $time);
         $display("        Pulses counted: %d", uut.pulse_count);
-        $display("        Calculated speed: %d km/h", uut.speed_kmh);
+        $display("        Calculated speed: %d cm/s", uut.speed_cm_s);
     end
 
     always @(posedge red_led) begin
