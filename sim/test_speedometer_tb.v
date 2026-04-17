@@ -1,31 +1,35 @@
 // ============================================================
 // TESTBENCH: FPGA Speedometer (Nexys A7)
-// Updated for 100 MHz clock
+// Aligned to implemented RTL behavior documented in IEEE report:
+// - Speed unit is cm/s
+// - Measurement window is 0.5 s in hardware
+// - Speed calculation is pulse_count * 16
+// - Overspeed threshold is 200 cm/s
+//
+// For practical Vivado simulation, this testbench fast-forwards the
+// internal timer near the end of the 0.5 s window. This changes only
+// simulation runtime, not the synthesizable RTL.
 // ============================================================
 
 `timescale 1ns / 1ps
 
 module test_speedometer_tb;
 
-    // ============ TESTBENCH SIGNALS ============
-    reg clk;                          // 100 MHz clock
-    reg reset_btn;                    // Reset button (active HIGH)
-    reg ir1;                          // IR Sensor 1
-    reg ir2;                          // IR Sensor 2
+    reg clk;
+    reg reset_btn;
+    reg ir1;
+    reg ir2;
 
-    wire [6:0] seg;                   // 7-segment cathode pins
-    wire [7:0] an;                    // 7-segment anode selectors
-    wire red_led;                     // Red LED output
+    wire [6:0] seg;
+    wire [7:0] an;
+    wire red_led;
 
-    // Internal signals for monitoring
-    wire timer_done;
-    wire timer_reset;
-    wire [8:0] pulse_count;
-    wire [12:0] speed_cm_s;
-    integer i;
+    reg  [8:0]  captured_pulse_count;
+    reg  [12:0] captured_speed_cm_s;
+    reg         led_seen;
+    integer     pass_count;
+    integer     fail_count;
 
-
-    // ============ DEVICE UNDER TEST ============
     speedometer_top uut (
         .clk(clk),
         .reset_btn(reset_btn),
@@ -36,241 +40,235 @@ module test_speedometer_tb;
         .red_led(red_led)
     );
 
-
-    // ============ CLOCK GENERATION (100 MHz) ============
     initial begin
-        clk = 0;
-        forever #5 clk = ~clk;  // 10 ns period = 100 MHz
+        clk = 1'b0;
+        forever #5 clk = ~clk;  // 100 MHz
     end
 
-
-    // ============ HELPER TASK: GENERATE QUADRATURE PULSE ============
-    // Simulates one complete wheel rotation step (4-state transition)
-    // 00 → 01 → 11 → 10 → 00 (forward direction)
-    // Input: delay_time in nanoseconds
-    task generate_quadrature_step;
-        input integer delay_ns;
+    task apply_reset;
         begin
-            ir1 = 0; ir2 = 0; #delay_ns;  // State 00
-            ir1 = 0; ir2 = 1; #delay_ns;  // State 01
-            ir1 = 1; ir2 = 1; #delay_ns;  // State 11
-            ir1 = 1; ir2 = 0; #delay_ns;  // State 10
+            reset_btn = 1'b1;
+            ir1       = 1'b0;
+            ir2       = 1'b0;
+            repeat (5) @(posedge clk);
+            reset_btn = 1'b0;
+            repeat (5) @(posedge clk);
         end
     endtask
 
-
-    // ============ HELPER TASK: GENERATE NOISY PULSE ============
-    // Simulates IR sensor noise/bouncing
-    task generate_noisy_step;
-        input integer delay_ns;
+    task start_test;
         begin
-            // 00 → 01 with bouncing
-            ir1 = 0; ir2 = 0; #delay_ns;
-            ir1 = 0; ir2 = 1; #(delay_ns/2);
-            ir1 = 0; ir2 = 0; #(delay_ns/4);  // Bounce back
-            ir1 = 0; ir2 = 1; #(delay_ns/4);  // Back to normal
-            ir1 = 1; ir2 = 1; #delay_ns;
-            ir1 = 1; ir2 = 0; #delay_ns;
+            captured_pulse_count = 9'd0;
+            captured_speed_cm_s  = 13'd0;
+            led_seen             = 1'b0;
+            ir1                  = 1'b0;
+            ir2                  = 1'b0;
+            repeat (2) @(posedge clk);
         end
     endtask
 
+    // One complete forward quadrature cycle:
+    // 00 -> 01 -> 11 -> 10 -> 00
+    // This produces 4 valid counted transitions.
+    task generate_quadrature_cycle;
+        input integer delay_ns;
+        begin
+            ir1 = 1'b0; ir2 = 1'b0; #delay_ns;
+            ir1 = 1'b0; ir2 = 1'b1; #delay_ns;
+            ir1 = 1'b1; ir2 = 1'b1; #delay_ns;
+            ir1 = 1'b1; ir2 = 1'b0; #delay_ns;
+            ir1 = 1'b0; ir2 = 1'b0; #delay_ns;
+        end
+    endtask
 
-    // ============ MAIN TEST SEQUENCE ============
+    // Invalid state jumps should not increment the pulse counter.
+    task generate_invalid_jump;
+        input integer delay_ns;
+        begin
+            ir1 = 1'b0; ir2 = 1'b0; #delay_ns;
+            ir1 = 1'b1; ir2 = 1'b1; #delay_ns;  // 00 -> 11
+            ir1 = 1'b0; ir2 = 1'b0; #delay_ns;  // 11 -> 00
+        end
+    endtask
+
+    // Short glitches stay below the 3-sample filter length and should
+    // not appear at the cleaned sensor outputs.
+    task generate_short_glitch_noise;
+        begin
+            ir1 = 1'b0; ir2 = 1'b0; #7;
+            ir2 = 1'b1; #8;
+            ir2 = 1'b0; #9;
+            ir1 = 1'b1; #6;
+            ir1 = 1'b0; #10;
+            ir2 = 1'b1; #5;
+            ir2 = 1'b0; #11;
+            ir1 = 1'b0; ir2 = 1'b0; #20;
+        end
+    endtask
+
+    // Move the hardware timer close to its 0.5 s terminal count so the
+    // simulation closes the measurement window in a few clock cycles.
+    task fast_forward_to_window_close;
+        begin
+            @(negedge clk);
+            uut.clk_div_inst.count = 26'd49_999_998;
+            @(posedge uut.timer_done);
+            @(posedge clk);
+        end
+    endtask
+
+    task check_measurement;
+        input integer test_id;
+        input integer expected_pulses;
+        input integer expected_speed_cm_s;
+        input integer expected_led_seen;
+        begin
+            if ((captured_pulse_count == expected_pulses) &&
+                (captured_speed_cm_s  == expected_speed_cm_s) &&
+                (led_seen             == expected_led_seen)) begin
+                pass_count = pass_count + 1;
+                $display("[PASS] TEST %0d -> pulses=%0d, speed=%0d cm/s, led_seen=%0d",
+                         test_id, captured_pulse_count, captured_speed_cm_s, led_seen);
+            end else begin
+                fail_count = fail_count + 1;
+                $display("[FAIL] TEST %0d", test_id);
+                $display("       expected: pulses=%0d, speed=%0d cm/s, led_seen=%0d",
+                         expected_pulses, expected_speed_cm_s, expected_led_seen);
+                $display("       observed: pulses=%0d, speed=%0d cm/s, led_seen=%0d",
+                         captured_pulse_count, captured_speed_cm_s, led_seen);
+            end
+        end
+    endtask
+
+    task check_display_hold;
+        input integer test_id;
+        input integer expected_measured_speed;
+        input integer expected_displayed_speed;
+        begin
+            if ((captured_speed_cm_s   == expected_measured_speed) &&
+                (uut.displayed_speed   == expected_displayed_speed) &&
+                (red_led               == 1'b0)) begin
+                pass_count = pass_count + 1;
+                $display("[PASS] TEST %0d -> measured_speed=%0d cm/s, displayed_speed=%0d cm/s, red_led=%0d",
+                         test_id, captured_speed_cm_s, uut.displayed_speed, red_led);
+            end else begin
+                fail_count = fail_count + 1;
+                $display("[FAIL] TEST %0d", test_id);
+                $display("       expected: measured_speed=%0d cm/s, displayed_speed=%0d cm/s, red_led=0",
+                         expected_measured_speed, expected_displayed_speed);
+                $display("       observed: measured_speed=%0d cm/s, displayed_speed=%0d cm/s, red_led=%0d",
+                         captured_speed_cm_s, uut.displayed_speed, red_led);
+            end
+        end
+    endtask
+
     initial begin
-
-        // ===== INITIALIZATION =====
-        $display("\n");
-        $display("========================================");
-        $display("  SPEEDOMETER SIMULATION - Nexys A7");
-        $display("  Clock: 100 MHz");
-        $display("  Measurement Window: 0.5 seconds");
-        $display("========================================");
-        $display("\n");
-
-        reset_btn = 0;  // Button released (reset inactive)
-        ir1 = 0;
-        ir2 = 0;
-
-        #100;
-
-        // ===== APPLY RESET =====
-        $display("[TIME: %t] Applying reset...", $time);
-        reset_btn = 1;  // Assert reset (active HIGH)
-        #100;
-        reset_btn = 0;  // Release reset
-        #100;
-
-        $display("[TIME: %t] Reset complete. Starting tests...\n", $time);
-
-        // ==================================================
-        // TEST 1: LOW SPEED (~50 km/h)
-        // ==================================================
-        $display("\n========================================");
-        $display("TEST 1: LOW SPEED (~50 km/h)");
-        $display("========================================");
-        $display("Generating 100 pulses over 0.5 seconds...");
-
-        for (i = 0; i < 100; i = i + 1) begin
-            generate_quadrature_step(2500000);  // Slower pulses
-        end
-
-        // Wait for FULL measurement window (500ms + buffer)
-        #520000000;
-
-        $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
-        $display("[RESULT] Pulse Count: %d", uut.pulse_count);
-        $display("[RESULT] Red LED: %b (should be 0 for speed < 110 km/h)", red_led);
-        $display("[RESULT] Display Segments: %7b", seg);
-        $display("[RESULT] Display Anodes: %8b\n", an);
-
-        // ==================================================
-        // RESET BETWEEN TESTS
-        // ==================================================
-        #500000;
-        reset_btn = 1;  // Assert reset
-        #100;
-        reset_btn = 0;  // Release reset
-        #1000000;
-
-        // ==================================================
-        // TEST 2: MEDIUM SPEED (~75 km/h)
-        // ==================================================
-        $display("\n========================================");
-        $display("TEST 2: MEDIUM SPEED (~75 km/h)");
-        $display("========================================");
-        $display("Generating 150 pulses over 0.5 seconds...");
-
-        for (i = 0; i < 150; i = i + 1) begin
-            generate_quadrature_step(1666667);  // Medium pulses
-        end
-
-        // Wait for FULL measurement window (500ms + buffer)
-        #520000000;
-
-        $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
-        $display("[RESULT] Pulse Count: %d", uut.pulse_count);
-        $display("[RESULT] Red LED: %b (should be 0)", red_led);
-        $display("[RESULT] Display Segments: %7b", seg);
-        $display("[RESULT] Display Anodes: %8b\n", an);
-
-        // ==================================================
-        // RESET BETWEEN TESTS
-        // ==================================================
-        #500000;
-        reset_btn = 1;  // Assert reset
-        #100;
-        reset_btn = 0;  // Release reset
-        #1000000;
-
-        // ==================================================
-        // TEST 3: HIGH SPEED (~120 km/h) - Should trigger LED
-        // ==================================================
-        $display("\n========================================");
-        $display("TEST 3: HIGH SPEED (~120 km/h)");
-        $display("========================================");
-        $display("Generating 200 pulses over 0.5 seconds...");
-
-        for (i = 0; i < 200; i = i + 1) begin
-            generate_quadrature_step(1250000);  // Faster pulses
-        end
-
-        // Wait for FULL measurement window (500ms + buffer)
-        #520000000;
-
-        $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
-        $display("[RESULT] Pulse Count: %d", uut.pulse_count);
-        $display("[RESULT] Red LED: %b (should be 1 for speed > 110 km/h)", red_led);
-        $display("[RESULT] Display Segments: %7b", seg);
-        $display("[RESULT] Display Anodes: %8b\n", an);
-
-        // ==================================================
-        // RESET BETWEEN TESTS
-        // ==================================================
-        #500000;
-        reset_btn = 1;  // Assert reset
-        #100;
-        reset_btn = 0;  // Release reset
-        #1000000;
-
-        // ==================================================
-        // TEST 4: VERY HIGH SPEED (~180 km/h)
-        // ==================================================
-        $display("\n========================================");
-        $display("TEST 4: VERY HIGH SPEED (~180 km/h)");
-        $display("========================================");
-        $display("Generating 250 pulses over 0.5 seconds...");
-
-        for (i = 0; i < 250; i = i + 1) begin
-            generate_quadrature_step(1000000);  // Very fast pulses
-        end
-
-        // Wait for FULL measurement window (500ms + buffer)
-        #520000000;
-
-        $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
-        $display("[RESULT] Pulse Count: %d", uut.pulse_count);
-        $display("[RESULT] Red LED: %b (should be 1)", red_led);
-        $display("[RESULT] Display Segments: %7b", seg);
-        $display("[RESULT] Display Anodes: %8b\n", an);
-
-        // ==================================================
-        // TEST 5: ZERO SPEED (No pulses)
-        // ==================================================
-        #500000;
-        reset_btn = 1;  // Assert reset
-        #100;
-        reset_btn = 0;  // Release reset
-        #1000000;
+        pass_count = 0;
+        fail_count = 0;
+        reset_btn  = 1'b0;
+        ir1        = 1'b0;
+        ir2        = 1'b0;
+        led_seen   = 1'b0;
+        captured_pulse_count = 9'd0;
+        captured_speed_cm_s  = 13'd0;
 
         $display("\n========================================");
-        $display("TEST 5: ZERO SPEED (No pulses)");
-        $display("========================================");
-        $display("No pulses generated (stationary)...");
-
-        // Wait for FULL measurement window (500ms + buffer)
-        #520000000;
-
-        $display("[TIME: %t] Measurement window closed", $time);
-        $display("[RESULT] Speed: %d cm/s", uut.speed_cm_s);
-        $display("[RESULT] Pulse Count: %d", uut.pulse_count);
-        $display("[RESULT] Red LED: %b (should be 0)", red_led);
-        $display("[RESULT] Display Segments: %7b", seg);
-        $display("[RESULT] Display Anodes: %8b\n", an);
-
-        // ==================================================
-        // TEST COMPLETE
-        // ==================================================
-        #1000000;
-        $display("\n========================================");
-        $display("  ALL TESTS COMPLETE");
+        $display(" SPEEDOMETER SIMULATION - Nexys A7");
+        $display(" Unit: cm/s");
+        $display(" Implemented formula: speed = pulse_count * 16");
+        $display(" Overspeed threshold: 200 cm/s");
         $display("========================================\n");
 
+        apply_reset;
+
+        $display("TEST 1: LOW SPEED -> 8 valid transitions, 128 cm/s, LED must stay low");
+        start_test;
+        repeat (2) generate_quadrature_cycle(50);
+        fast_forward_to_window_close;
+        check_measurement(1, 8, 128, 0);
+
+        apply_reset;
+
+        $display("TEST 2: THRESHOLD-EDGE BELOW LIMIT -> 12 valid transitions, 192 cm/s");
+        start_test;
+        repeat (3) generate_quadrature_cycle(50);
+        fast_forward_to_window_close;
+        check_measurement(2, 12, 192, 0);
+
+        apply_reset;
+
+        $display("TEST 3: OVERSPEED -> 16 valid transitions, 256 cm/s, LED must assert");
+        start_test;
+        repeat (4) generate_quadrature_cycle(50);
+        fast_forward_to_window_close;
+        check_measurement(3, 16, 256, 1);
+
+        apply_reset;
+
+        $display("TEST 4: INVALID QUADRATURE JUMPS -> counter must remain zero");
+        start_test;
+        repeat (6) generate_invalid_jump(50);
+        fast_forward_to_window_close;
+        check_measurement(4, 0, 0, 0);
+
+        apply_reset;
+
+        $display("TEST 5: SHORT GLITCH NOISE -> filter must reject glitches");
+        start_test;
+        repeat (10) generate_short_glitch_noise;
+        fast_forward_to_window_close;
+        check_measurement(5, 0, 0, 0);
+
+        apply_reset;
+
+        $display("TEST 6: ZERO SPEED -> no motion, zero output");
+        start_test;
+        fast_forward_to_window_close;
+        check_measurement(6, 0, 0, 0);
+
+        apply_reset;
+
+        $display("TEST 7A: DISPLAY HOLD SETUP -> create non-zero reading");
+        start_test;
+        repeat (4) generate_quadrature_cycle(50);
+        fast_forward_to_window_close;
+        check_measurement(7, 16, 256, 1);
+
+        $display("TEST 7B: DISPLAY HOLD -> next zero window keeps last displayed value");
+        start_test;
+        fast_forward_to_window_close;
+        check_display_hold(8, 0, 256);
+
+        $display("\n========================================");
+        $display(" TEST SUMMARY");
+        $display(" Passed: %0d", pass_count);
+        $display(" Failed: %0d", fail_count);
+        $display("========================================\n");
+
+        if (fail_count == 0)
+            $display("[RESULT] All simulation tests passed.");
+        else
+            $display("[RESULT] One or more simulation tests failed.");
+
+        #100;
         $finish;
     end
 
-
-    // ============ WAVEFORM DUMP FOR VIEWING ============
     initial begin
         $dumpfile("speedometer_nexys_a7.vcd");
         $dumpvars(0, test_speedometer_tb);
-        // Dump only selected signals for readability
-        $dumpvars(1, uut.speed_cm_s, uut.pulse_count, uut.timer_done);
     end
 
-
-    // ============ MONITORING BLOCK ============
     always @(posedge uut.timer_done) begin
-        $display("[TIMER] Measurement window closed at time %t", $time);
-        $display("        Pulses counted: %d", uut.pulse_count);
-        $display("        Calculated speed: %d cm/s", uut.speed_cm_s);
+        captured_pulse_count = uut.pulse_count;
+        captured_speed_cm_s  = uut.speed_cm_s;
+        $display("[TIMER] Window closed at %0t ns -> pulses=%0d, speed=%0d cm/s, displayed=%0d cm/s",
+                 $time, uut.pulse_count, uut.speed_cm_s, uut.displayed_speed);
     end
 
     always @(posedge red_led) begin
-        $display("[ALERT] Overspeed! Speed exceeded 110 km/h at time %t", $time);
+        led_seen = 1'b1;
+        $display("[ALERT] Overspeed indication observed at %0t ns", $time);
     end
 
 endmodule

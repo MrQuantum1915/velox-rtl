@@ -1,141 +1,873 @@
-\documentclass[conference]{IEEEtran}
+\documentclass[conference,a4paper]{IEEEtran}
 
+% ─── Packages ────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
 \usepackage{cite}
-\usepackage{amsmath}
-\usepackage{array}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{array,booktabs,tabularx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
 \usepackage{url}
+\usepackage{balance}
 
-\title{Velox-RTL: An FPGA-Based Quadrature Speedometer on the Nexys A7}
+% ─── Code-listing colours & style ────────────────────────────────────────────
+\definecolor{codegreen}{RGB}{34,139,34}
+\definecolor{codegray}{RGB}{92,92,92}
+\definecolor{codeblue}{RGB}{25,25,112}
 
-\author{
-\IEEEauthorblockN{Author Name}
-\IEEEauthorblockA{
-Department of Computer Science and Engineering\\
-Institution Name\\
-City, Country\\
-email@example.com
+\lstdefinestyle{codestyle}{
+    basicstyle=\ttfamily\scriptsize,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    stepnumber=1,
+    numbersep=5pt,
+    breaklines=true,
+    breakatwhitespace=true,
+    showstringspaces=false,
+    columns=fullflexible,
+    frame=single,
+    rulecolor=\color{black},
+    keywordstyle=\color{codeblue},
+    commentstyle=\color{codegreen},
+    xleftmargin=1em,
+    inputencoding=utf8,
+    literate=
+      {->}{{$\rightarrow$}}2
+      {--}{{--}}2
+      {>=}{{$\ge$}}2
+      {<=}{{$\le$}}2
 }
-}
+\lstset{style=codestyle, language=Verilog}
 
+% ─── Custom helpers ───────────────────────────────────────────────────────────
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\blankline}[1]{\rule{#1}{0.4pt}}
+
+% Placeholder figure (single column)
+\newcommand{\placeholderfigure}[2]{%
+\begin{figure}[H]
+\centering
+\fbox{\parbox[c][#1][c]{0.95\columnwidth}{\centering\textbf{Placeholder}\\[4pt]#2}}
+\end{figure}}
+
+% Placeholder figure (double / full width)
+\newcommand{\placeholderwide}[2]{%
+\begin{figure*}[!t]
+\centering
+\fbox{\parbox[c][#1][c]{0.93\textwidth}{\centering\textbf{Placeholder}\\[4pt]#2}}
+\end{figure*}}
+
+% ─── Title & Author ───────────────────────────────────────────────────────────
+\title{Design and Implementation of a Dual IR Sensor Based\\
+Speed Measuring System on Nexys A7 FPGA}
+
+% ═════════════════════════════════════════════════════════════════════════════
 \begin{document}
+% ═════════════════════════════════════════════════════════════════════════════
 
+% ─── Cover / Title Page ───────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{0.8cm}
+
+{\LARGE\textbf{Indian Institute of Information Technology Vadodara}\par}
+\vspace{0.9cm}
+
+\parbox[c][4.0cm][c]{5.0cm}{
+\centering
+\includegraphics[width=3cm,height=3cm,keepaspectratio]{institute-logo.png}
+}
+\vspace{0.8cm}
+
+{\Large\textbf{Computer Organization and Architecture Project Report}\par}
+\vspace{0.7cm}
+{\Large\textbf{Speed Measuring System Using Two IR Sensors}\par}
+\vspace{0.4cm}
+{\large Implemented on Digilent Nexys A7 FPGA Board\par}
+\vspace{1.0cm}
+
+\begin{tabular}{|p{5.4cm}|p{8.0cm}|}
+\hline
+\textbf{Project Title}   & Speed Measuring System Using Two IR Sensors \\
+\hline
+\textbf{Project Domain}  & FPGA-Based Embedded Digital Design \\
+\hline
+\textbf{Target Board}    & Digilent Nexys A7, AMD Artix-7 FPGA \\
+\hline
+\textbf{Language / Tool} & Verilog HDL, XDC Constraints, AMD Vivado \\
+\hline
+\textbf{Guide}  & Dr. Sanjeev Yadav \\
+\hline
+\textbf{Session}         & 2025-26 \\
+\hline
+\end{tabular}
+
+\vspace{1.0cm}
+
+\begin{tabular}{|c|p{5.8cm}|p{3.0cm}|p{3.2cm}|}
+\hline
+\textbf{Sr.~No.} & \textbf{Student Name} & \textbf{Roll No.} & \textbf{Signature} \\
+\hline
+1 & Darshan Patel & 202451126 & \blankline{2.6cm} \\
+\hline
+2 & Tanishq & 202451159 & \blankline{2.6cm} \\
+\hline
+3 & Tarun Jain & 202451160 & \blankline{2.6cm} \\
+\hline
+4 & Avadhesh Nagar & 202451185 & \blankline{2.6cm} \\
+\hline
+5 & Dev Joshi & 202451187 & \blankline{2.6cm} \\
+\hline
+\end{tabular}
+
+\vfill
+{\large Date of Submission:17 April 2026\par}
+\end{titlepage}
+
+
+% ─── Main matter (two-column IEEE style begins here) ──────────────────────────
+\clearpage
 \maketitle
 
+% ─── Abstract ────────────────────────────────────────────────────────────────
 \begin{abstract}
-This paper presents Velox-RTL, a real-time speedometer implemented in RTL Verilog for the Digilent Nexys A7 FPGA board. The design targets a compact hardware-only solution for estimating motion speed from two infrared sensor channels using quadrature transitions. Instead of relying on a processor or floating-point arithmetic, the system performs pulse conditioning, fixed-window counting, integer scaling, display multiplexing, and overspeed indication directly in synchronous logic driven by the 100 MHz on-board clock. The implementation includes input glitch filtering, a 0.5 s measurement interval, a calibrated integer speed conversion path, a three-digit seven-segment display interface, and a programmable speed threshold for visual alerting. The resulting architecture is simple to synthesize, suitable for instructional FPGA workflows, and representative of how sensing, timing, arithmetic, and user feedback can be integrated in a single register-transfer-level design.
+This report provides a design and implementation of a real-time speed measuring system implemented in Verilog HDL and designed to run on the Digilent Nexys A7 FPGA board. The installed design has two infrared sensors as digital inputs, filters sensor noise, counts valid quadrature transitions within a fixed 0.5s observation window, and converts the result to speed in cm/s with a design-time calibration factor, and displays the result on the onboard seven-segment display. An overspeed indicator is a special red LED. The report is based purposefully on the checked-in RTL and constraints as opposed to a conceptual description alone. That is why it records the real module hierarchy, measurement scheme, display persistence scheme, pin mapping, and current verification status in the repository. Placeholders and blank spaces are provided in any place where the project team will need to insert a hardware-specific value or Vivado-generated screenshots in the future.
 \end{abstract}
 
 \begin{IEEEkeywords}
-FPGA, Verilog, speed measurement, quadrature sensing, Nexys A7, seven-segment display
+FPGA, Verilog HDL, Nexys A7, IR sensor, speed measurement, quadrature transitions, seven-segment display, Vivado, computer architecture project
 \end{IEEEkeywords}
 
+% ─── Section 1 ───────────────────────────────────────────────────────────────
 \section{Introduction}
-Real-time speed measurement is a common embedded-systems requirement in industrial automation, laboratory instrumentation, and educational hardware projects. Field-programmable gate arrays (FPGAs) are well suited to this task because they provide deterministic timing, parallel signal processing, and direct access to sensor interfaces without operating-system overhead.
+Motion measurement in digital hardware is an interesting project since it bridges sensor interfacing, synchronous logic, timing, data representation and formatting output in a single system. In this project, two IR sensors produce digital signals, which indicate the movement of an object. These are linked to the FPGA by the PMOD interface of the Nexys A7 board. When the signal activity is captured, it is processed completely in hardware without software.
 
-Velox-RTL implements a compact speedometer on the Digilent Nexys A7 development board using synthesizable Verilog. The project focuses on a hardware-centric data path that accepts two infrared (IR) sensor inputs, filters the incoming signals, counts forward quadrature transitions over a fixed time window, converts the resulting pulse count into a calibrated speed value, and presents the result through the on-board seven-segment display and an overspeed indicator LED. The design is intended both as a practical measurement system and as a demonstration of standard digital design techniques such as synchronous timing, counter-based measurement, display multiplexing, and threshold detection.
+The RTL deployed in the repository makes the project a fixed-window pulse-counting speedometer. This is a significant difference. A wide category of speed measurement systems either counts pulses on a wheel or encoder, or measures time of flight between two spatially separated sensors. The checked-in Verilog is of the latter type. It measures forward transitions of quadrature states, over a half-second time interval, and then uses a fixed scale factor to approximate speed. The report thus concentrates on the design which can be synthesized in the existing repository.
 
-\section{System Overview}
-The implemented top-level module, \texttt{speedometer\_top}, is clocked by the 100 MHz oscillator available on the Nexys A7 board. Two external IR channels are connected through the PMOD header and interpreted as a quadrature-like input sequence. The design counts valid forward state transitions during a fixed 0.5 s observation interval and maps the observed event rate to speed in centimeters per second.
+The project is also relevant in the Computer Organization and Architecture perspective since it is based on explicit modular decomposition, synchronous state observation, arithmetic scaling, display multiplexing, and timing-driven implementation on programmable logic. Practical engineering problems revealed in the work include width overflow, reset polarity, asynchronous signal sampling, and simulation and implementation artifact consistency.
 
-Table~\ref{tab:params} summarizes the principal implementation parameters.
+% ─── Section 2 ───────────────────────────────────────────────────────────────
+\section{Project Statement and Objectives}
 
-\begin{table}[htbp]
-\caption{Key Implementation Parameters}
-\label{tab:params}
+\subsection{Problem Statement}
+The project goal is to create an FPGA-based system, which takes the input of two IR sensors, calculates the speed of a moving object based on sensor transitions, and displays the measured value in real time on the Nexys A7 board. It must be able to run predictably at the onboard 100 MHz clock, ignore small sensor glitches, and give a visual cue when the measured speed is above a specified limit.
+
+\subsection{Project Objectives}
+The specific objectives of the implemented design are listed below.
+\begin{enumerate}
+\item Interface two IR sensor signals to an FPGA using proper logic-level constraints.
+\item Clean the raw sensor inputs before using them in measurement logic.
+\item Count valid forward quadrature transitions in a fixed measurement interval.
+\item Convert the measured count into speed using a calibration constant embedded in the RTL.
+\item Display the result on the onboard seven-segment display.
+\item Retain the last non-zero reading briefly so the user can observe the output.
+\item Generate a red LED alert for overspeed conditions.
+\item Provide a repository structure that can be simulated and synthesized in Vivado.
+\end{enumerate}
+
+\subsection{Report Scope}
+The hardware platform, code architecture, design equations, interface mapping, planned verification flow and implementation placeholders are discussed in this report. It also logs the engineering constraints that can be seen in the repository such that the final report submitted is technically consistent with the current source code.
+
+% ─── Section 3 ───────────────────────────────────────────────────────────────
+\section{Implemented System Summary}
+
+\subsection{What the Repository Actually Implements}
+The source file \texttt{src/speedometer\_top\_nexys.v} contains the entire synthesizable design. The top-level module instantiates six helper blocks: an IR input filter, a clock divider, a pulse counter, a speed calculator, a BCD converter, a seven-segment multiplexer, and a red LED controller. A small display-hold register block is also coded directly in the top-level module.
+
+The measurement principle implemented in the design is summarized as follows.
+\begin{enumerate}
+\item The two IR channels are sampled and filtered.
+\item A 26-bit counter defines a fixed observation window of 0.5\,s.
+\item During the active window, a pulse counter increments for valid forward quadrature transitions in the sequence \texttt{00}$\rightarrow$\texttt{01}$\rightarrow$\texttt{11}$\rightarrow$\texttt{10}$\rightarrow$\texttt{00}.
+\item At the end of the window, the pulse count is multiplied by 16 to form the speed output in cm/s.
+\item The measured value is converted to decimal digits and shown on the seven-segment display.
+\item A red LED is asserted when the measured speed crosses the overspeed threshold.
+\end{enumerate}
+
+\subsection{Why the Distinction Matters}
+The README file contains a higher-level architectural narrative that mentions a four-stage pipeline and time-interval measurement between sensors. However, the synthesizable Verilog checked into the repository uses a pulse-counting architecture instead. For an academic report, describing a design that is not implemented would weaken the submission. This document therefore presents the pulse-counting speedometer as the principal design and treats any broader conceptual description only as background motivation.
+
+\subsection{Functional Output of the Current Design}
+The current design produces three directly visible outputs on the board.
+\begin{enumerate}
+\item A three-digit numerical speed readout using the onboard eight-digit seven-segment display.
+\item A red LED overspeed indicator.
+\item Persistent display retention of the last non-zero speed value for approximately five seconds.
+\end{enumerate}
+
+% ─── Section 4 ───────────────────────────────────────────────────────────────
+\section{Hardware Platform and Components}
+
+\subsection{Target FPGA Board}
+The project targets the Digilent Nexys A7 development board based on an AMD Artix-7 FPGA. The repository README identifies the device family as \texttt{XC7A100T}. The constraints file maps the board clock, push button, PMOD pins, display pins, and one LED output. The board provides an onboard 100\,MHz oscillator, which is used as the system clock throughout the design.
+
+\subsection{Project Components}
+
+\begin{table}[H]
+\caption{Major hardware and software components}
 \centering
-\begin{tabular}{|>{\raggedright\arraybackslash}p{1.35in}|>{\raggedright\arraybackslash}p{1.65in}|}
+\begin{tabular}{|p{2.6cm}|p{5.0cm}|}
 \hline
-Parameter & Value \\
+\textbf{Item} & \textbf{Role in Project} \\
 \hline
-Target board & Digilent Nexys A7 \\
+Nexys A7 FPGA board & Main digital hardware platform \\
 \hline
-FPGA family & AMD Artix-7 \\
+100\,MHz onboard oscillator & System timing source \\
 \hline
-System clock & 100 MHz \\
+IR Sensor 1 & First quadrature input channel \\
 \hline
-Sensor inputs & 2 IR channels \\
+IR Sensor 2 & Second quadrature input channel \\
 \hline
-Measurement window & 0.5 s \\
+BTNC push button & Manual reset input \\
 \hline
-Pulse counter width & 9 bits \\
+Seven-segment display & Real-time numeric output \\
 \hline
-Speed output width & 13 bits \\
+Onboard LED output & Overspeed indication \\
 \hline
-Display output & 3 multiplexed decimal digits \\
+AMD Vivado & Synthesis, implementation, bitstream generation, and simulation \\
 \hline
-Alert output & 1 red LED threshold indicator \\
+Verilog HDL & RTL development language \\
 \hline
 \end{tabular}
 \end{table}
 
-At a high level, the hardware is organized as a linear signal-processing path composed of input conditioning, timing and counting, integer speed conversion, display formatting, and alert generation. All functional blocks operate within a single clock domain, which avoids clock-domain crossing complexity in the baseline implementation.
-
-\section{Hardware Architecture}
-\subsection{Input Conditioning}
-Each IR input is first passed through a simple three-sample digital filter implemented as a shift register and majority-style hold mechanism. The output changes state only after three consecutive identical samples are observed. This suppresses short glitches and sensor chatter before the signals reach the counting logic.
-
-\subsection{Measurement Window Generation}
-A dedicated clock divider creates the measurement interval. With the 100 MHz system clock, the counter rolls over after 49,999,999 cycles, producing a 0.5 s sampling window. When the terminal count is reached, the design asserts control signals that mark the end of the current observation period and reset the pulse counter for the next interval.
-
-\subsection{Quadrature Pulse Counting}
-The pulse-counting module observes the current and previous states of the two filtered IR signals. Valid forward transitions are identified using the sequence
-\begin{equation}
-00 \rightarrow 01 \rightarrow 11 \rightarrow 10 \rightarrow 00.
-\end{equation}
-Only these expected transitions increment the counter, which helps reject invalid state changes caused by noise or reverse motion. The pulse counter is implemented as a 9-bit register, allowing counts up to 511 per window before rollover.
-
-\subsection{Speed Conversion}
-The project uses a calibrated integer mapping from measured pulse count to output speed. If $N_p$ is the number of valid quadrature steps observed during one 0.5 s interval, then the implemented conversion is
-\begin{equation}
-v_{cm/s} = 16 \times N_p.
-\end{equation}
-This operation is realized as a constant multiplication in combinational logic and produces a 13-bit speed value. The constant factor of 16 acts as the calibration coefficient of the current implementation and can be updated if the sensing geometry or encoder characteristics change.
-
-\subsection{Display and Alert Logic}
-The computed speed is latched into a display register when a nonzero measurement becomes available. A hold counter preserves the last valid reading for approximately 5 s to improve readability when motion briefly ceases. The displayed value is converted into decimal hundreds, tens, and ones digits and refreshed on the seven-segment display using time-multiplexing.
-
-The display driver uses a 17-bit refresh divider, which yields a stable visual output without visible flicker. In parallel, the LED controller compares the current speed estimate against a fixed threshold of 200 cm/s and asserts the red LED when the threshold is exceeded.
-
-\section{Implementation Details}
-The complete RTL source is contained in a compact Verilog hierarchy, with the top-level module instantiating five primary functional blocks:
-
+\subsection{Board and Mechanical Information}
+The repository contains the following board-related documentation.
 \begin{enumerate}
-\item \texttt{ir\_filter} for input glitch suppression,
-\item \texttt{clock\_divider} for the 0.5 s timing window,
-\item \texttt{pulse\_counter} for quadrature event accumulation,
-\item \texttt{speed\_calculator} for calibrated integer conversion, and
-\item \texttt{seven\_segment\_mux} and \texttt{red\_led\_controller} for user output.
+\item \texttt{Nexys\_A7\_Reference\_Manual.pdf}
+\item \texttt{Nexys\_A7\_Dimensions/Mechanical\_Nexys\_A7.pdf}
+\item \texttt{3D\_Model\_Nexys/Nexys\_4\_DDR.step}
 \end{enumerate}
 
-The implementation makes deliberate use of widened registers in several places. The speed path uses 13 bits to prevent overflow during multiplication, the display hold counter uses 30 bits to represent a 5 s persistence interval at 100 MHz, and the display refresh divider uses 17 bits to obtain an appropriate scan rate for the multiplexed output. These width choices are important because undersized counters would introduce functional errors even when the surrounding logic is otherwise correct.
+Since the exact dimensions were not extracted directly during report generation, the following table deliberately leaves insertion spaces so that the team can add the precise values from the mechanical drawing before final submission.
 
-\section{Verification Strategy}
-Behavioral verification for the project is organized around a dedicated testbench that generates quadrature-like sensor sequences at different rates. The test stimulus includes representative low-speed, medium-speed, and high-speed scenarios, along with a noisy input pattern intended to mimic sensor bounce. Waveform dumping is enabled to support inspection in a standard viewer.
+\begin{table}[H]
+\caption{Board specification fields to complete from official manual}
+\centering
+\begin{tabular}{|p{3.0cm}|p{4.2cm}|}
+\hline
+\textbf{Specification} & \textbf{Value to Insert} \\
+\hline
+Board length               & \blankline{3.0cm} \\
+\hline
+Board width                & \blankline{3.0cm} \\
+\hline
+Board thickness            & \blankline{3.0cm} \\
+\hline
+FPGA package               & \blankline{3.0cm} \\
+\hline
+Power input option used    & \blankline{3.0cm} \\
+\hline
+IR sensor module model     & \blankline{3.0cm} \\
+\hline
+Sensor spacing / wheel geometry & \blankline{3.0cm} \\
+\hline
+\end{tabular}
+\end{table}
 
-The verification intent is to check four behaviors: correct forward transition counting, correct end-of-window latching, correct speed scaling, and correct assertion of the overspeed LED beyond the configured threshold. Because the displayed speed is derived from counted transitions over a fixed interval, the expected response is monotonic with respect to pulse rate, which makes the design straightforward to validate in simulation.
+\subsection{Interfacing Notes}
+The present RTL expects only digital logic-level inputs from the IR sensors. Therefore, any analog front-end or comparator stage used in the physical setup should be documented separately if such hardware exists in the final project prototype. If the sensors were powered from a PMOD-compatible 3.3\,V supply, the exact VCC and GND routing should be inserted in the hardware interfacing table in Section~\ref{sec:pinmap}.
 
+% ─── Section 5 ───────────────────────────────────────────────────────────────
+\section{Design Methodology}
+
+\subsection{Measurement Principle}
+Let $N_p$ denote the number of valid counted transitions during one measurement window, and let $T_w$ denote the measurement window. From the code,
+\begin{equation}
+T_w = 0.5\ \text{s}
+\end{equation}
+and the speed computation implemented in hardware is
+\begin{equation}
+v_{\text{cm/s}} = 16 \times N_p.
+\end{equation}
+
+This means the present design already assumes a fixed calibration constant. If the measured transitions correspond to an object displacement $d_p$ per counted pulse, then the generic relation is
+\begin{equation}
+v_{\text{cm/s}} = \frac{N_p \cdot d_p}{T_w}.
+\end{equation}
+By comparing with the implemented form, the current constant is equivalent to
+\begin{equation}
+\frac{d_p}{T_w} = 16 \quad \Rightarrow \quad d_p = 8\ \text{cm}
+\end{equation}
+for $T_w=0.5$\,s. In other words, the source code behaves as if one valid counted event corresponds to 8\,cm of travel. This report leaves a calibration entry blank in later sections so that the team can confirm whether that assumption matches the physical setup.
+
+\subsection{Reset Strategy}
+The reset button on the board is active high, while most internal modules use active-low reset. The highest level module thus flips the reset button to form \texttt{reset\_n}. The method is easy and suitable to a small design, but a synchronized release of the reset can be implemented in later revisions where necessary.
+
+\subsection{Input Cleaning Strategy}
+The IR channels are asynchronous with respect to the FPGA clock. The present design is not a complete two-flip-flop synchronizer, but a three-sample filter, which only changes the output when three successive identical samples are seen. This technique is a glitch filter, and offers a certain amount of practical stabilization, though a more robust final version would still be a good idea with a strict metastability-hardened synchronizer stage.
+
+\subsection{Display Strategy}
+The result of the measurement is not plotted to the display on a cycle-to-cycle basis. Rather, the highest level logic holds the latest non-zero value and retains it on-screen during five seconds. This can be applied in a physical experiment since the object can be moving fast and the user still has time to read the number displayed on the screen.
+
+% ─── Section 6 ───────────────────────────────────────────────────────────────
+\section{RTL Architecture}
+
+\subsection{Top-Level Integration}
+The top-level module integrates all functional blocks and implements the display hold feature. It has limited inputs and outputs and is directly connected to board-level interfaces.
+
+\placeholderfigure{1.8in}{Insert Vivado RTL schematic of the top-level design showing all instantiated blocks and signal connectivity.}
+
+\subsection{IR Filter Module}
+The \texttt{ir\_filter} block uses a 3-bit shift register and updates the filtered signal only when the register is either \texttt{111} or \texttt{000}. This effectively rejects short transients and removes bouncing disturbances on the sensor lines. It is a compact and resource-efficient hardware solution.
+
+\subsection{Clock Divider Module}
+A 0.5\,s timing reference is generated by the clock divider block. A 26-bit counter counts system clock cycles from 0 to 49{,}999{,}999. Upon reaching the terminal count, the module asserts \texttt{timer\_done} and resets the counter. This provides a stable sampling interval from the 100\,MHz master clock without introducing a new clock domain.
+
+\subsection{Pulse Counter Module}
+The pulse counter compares previous and current values of the filtered IR signals and increments the count only for valid forward quadrature transitions. Invalid transitions, repeated states, or noise are ignored. The current implementation supports only one direction, which is sufficient for unidirectional measurement.
+
+\subsection{Speed Calculator Module}
+The speed calculator performs a simple multiplication by 16. This minimizes hardware complexity by avoiding division operations. The implementation reflects a calibrated scaling factor rather than a general physical formula.
+
+\subsection{BCD Converter}
+The BCD converter extracts the hundreds, tens, and ones digits of the computed speed. Since only three digits are displayed, values greater than 999\,cm/s wrap around modulo 1000 at the display stage. Internally, speeds up to 8176\,cm/s can be stored.
+
+\subsection{Seven-Segment Multiplexer}
+The display uses time multiplexing across three digits, driven by a 17-bit divider to ensure a stable refresh rate. Both segments and anodes are active-low, consistent with Nexys A7 hardware. Note that discrepancies may exist between XDC comments and source comments; the actual RTL signal behavior should be considered authoritative.
+
+\subsection{Red LED Controller}
+The \texttt{red\_led\_controller} activates an LED when the measured speed exceeds 200\,cm/s. This threshold can be adjusted via an RTL parameter. It provides immediate visual feedback, especially when the display changes rapidly.
+
+\subsection{Display Hold Logic}
+The display hold logic is implemented in the top-level sequential block. After a valid measurement window, the computed speed is stored and held for 5\,seconds using a 30-bit counter. This improves readability without significantly increasing design complexity.
+
+% ─── Section 7 ───────────────────────────────────────────────────────────────
+\section{Module-Wise Technical Analysis}
+
+\subsection{Internal Signal Widths}
+One strong point of the current repository is that the source comments explicitly record several fixes already applied during debugging. These include widening \texttt{speed\_cm\_s}, widening \texttt{displayed\_speed}, widening the display hold counter, and correcting the pulse counter state handling. Such recorded fixes are valuable in academic work because they show that the design evolved through testing rather than being copied as a static template.
+
+\begin{table}[H]
+\caption{Observed fixes documented in the Verilog source}
+\centering
+\begin{tabular}{|p{2.2cm}|p{5.0cm}|}
+\hline
+\textbf{Area} & \textbf{Observed correction in repository} \\
+\hline
+Speed width         & Output widened to 13~bits to avoid overflow \\
+\hline
+Display register    & Stored speed widened to 13~bits \\
+\hline
+Hold counter        & Increased to 30~bits for 5\,s retention \\
+\hline
+Mux divider         & Increased to 17~bits for visible refresh \\
+\hline
+Pulse state handling & Current state made combinational to avoid stale-read issue \\
+\hline
+LED threshold       & Threshold comment revised for widened speed range \\
+\hline
+BCD input width     & Expanded to match speed register width \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Dataflow Summary}
+The complete dataflow of the implemented system can be summarized in a compact hardware sequence:
+\begin{equation}
+\begin{split}
+\text{IR inputs} \rightarrow \text{filtered states} \rightarrow \text{quad. count} \\
+\rightarrow \text{scaled speed} \rightarrow \text{digits} \rightarrow \text{display/LED}
+\end{split}
+\end{equation}
+This clean flow is suitable for explanation in a COA report because it shows how a physical input stream is transformed into a human-readable output through distinct digital stages.
+
+\subsection{Timing Considerations}
+The design uses only one clock domain. This simplifies timing closure and avoids inter-clock synchronization problems. The most timing-sensitive logic is modest in complexity: counters, comparators, combinational selection, and a small amount of arithmetic. Therefore, the design is expected to meet timing comfortably on a 100\,MHz Artix-7 device, although the final timing summary should still be inserted from Vivado implementation reports.
+
+% ─── Section 8 ───────────────────────────────────────────────────────────────
+\section{Pin Mapping and Hardware Interfacing}
+\label{sec:pinmap}
+
+\subsection{Board-Level Pin Assignment}
+The XDC file \texttt{constraints/nexys\_a7.xdc} defines the physical mapping used by the project. Table~\ref{tab:pinmap} summarizes the active assignments visible in the repository.
+
+\begin{table}[H]
+\caption{Pin assignment summary from XDC}
+\label{tab:pinmap}
+\centering
+\begin{tabular}{|p{2.0cm}|p{1.1cm}|p{4.0cm}|}
+\hline
+\textbf{Signal} & \textbf{Pin} & \textbf{Purpose} \\
+\hline
+\texttt{clk}       & E3   & 100\,MHz onboard clock \\
+\hline
+\texttt{reset\_btn} & N17  & BTNC reset input \\
+\hline
+\texttt{ir1}       & C17  & IR sensor 1 via PMOD JA \\
+\hline
+\texttt{ir2}       & D18  & IR sensor 2 via PMOD JA \\
+\hline
+\texttt{seg[0]}    & T10  & Seven-segment segment a \\
+\hline
+\texttt{seg[1]}    & R10  & Seven-segment segment b \\
+\hline
+\texttt{seg[2]}    & K16  & Seven-segment segment c \\
+\hline
+\texttt{seg[3]}    & K13  & Seven-segment segment d \\
+\hline
+\texttt{seg[4]}    & P15  & Seven-segment segment e \\
+\hline
+\texttt{seg[5]}    & T11  & Seven-segment segment f \\
+\hline
+\texttt{seg[6]}    & L18  & Seven-segment segment g \\
+\hline
+\texttt{an[0]}     & J17  & Ones digit enable \\
+\hline
+\texttt{an[1]}     & J18  & Tens digit enable \\
+\hline
+\texttt{an[2]}     & T9   & Hundreds digit enable \\
+\hline
+\texttt{an[3]}     & J14  & Unused digit \\
+\hline
+\texttt{an[4]}     & P14  & Unused digit \\
+\hline
+\texttt{an[5]}     & T14  & Unused digit \\
+\hline
+\texttt{an[6]}     & K2   & Unused digit \\
+\hline
+\texttt{an[7]}     & U13  & Unused digit \\
+\hline
+\texttt{red\_led}  & H17  & Overspeed LED output \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Physical Wiring Table}
+The exact sensor module wiring may differ depending on the IR breakout board used by the team. Therefore, Table~\ref{tab:wiring} is provided as a completion table for the final submitted report.
+
+\begin{table}[H]
+\caption{Physical connection table to be completed}
+\label{tab:wiring}
+\centering
+\begin{tabular}{|p{2.2cm}|p{1.8cm}|p{2.5cm}|}
+\hline
+\textbf{Connection} & \textbf{Board / Pin} & \textbf{Insert Final Detail} \\
+\hline
+IR Sensor 1 signal & PMOD JA / C17 & \blankline{1.8cm} \\
+\hline
+IR Sensor 1 VCC    & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+IR Sensor 1 GND    & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+IR Sensor 2 signal & PMOD JA / D18 & \blankline{1.8cm} \\
+\hline
+IR Sensor 2 VCC    & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+IR Sensor 2 GND    & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+Power source used  & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+Mechanical spacing & \blankline{1.2cm} & \blankline{1.8cm} \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Engineering Notes on Pin Documentation}
+Two details in the repository should be verified against the actual board before final printing.
+\begin{enumerate}
+\item The XDC comments refer to the display in common-cathode wording, while the RTL drives the display as active-low anode and segment logic. The RTL behavior should be treated as the reliable implementation detail.
+\item The LED comment in the XDC associates pin H17 with ``LED17,'' while the optional comment block later maps H17 to \texttt{led[0]}. The physical board silk and reference manual should be checked once on hardware.
+\end{enumerate}
+
+% ─── Section 9 ───────────────────────────────────────────────────────────────
+\section{Vivado Design Flow}
+The project is intended to be implemented in AMD Vivado. A concise workflow suitable for the final report is listed below.
+\begin{enumerate}
+\item Create or open a Vivado project targeting the Nexys A7 FPGA device.
+\item Add \texttt{src/speedometer\_top\_nexys.v} as the design source.
+\item Add \texttt{constraints/nexys\_a7.xdc} as the constraints file.
+\item Optionally add \texttt{sim/test\_speedometer\_tb.v} after correcting the signal name mismatch described later.
+\item Run elaboration and inspect the RTL schematic.
+\item Run synthesis and review utilization.
+\item Run implementation and review timing reports.
+\item Generate bitstream and program the FPGA.
+\item Verify sensor inputs, display behavior, and LED threshold on hardware.
+\end{enumerate}
+
+\placeholderfigure{2.0in}{Insert screenshot of Vivado project summary or project settings page.}
+\placeholderfigure{2.0in}{Insert screenshot of RTL elaborated schematic from Vivado.}
+\placeholderfigure{2.0in}{Insert screenshot of synthesized schematic or utilization summary.}
+\placeholderfigure{2.0in}{Insert screenshot of timing summary after implementation.}
+\placeholderfigure{2.0in}{Insert screenshot of implemented device view or floorplan.}
+
+% ─── Section 10 ──────────────────────────────────────────────────────────────
+\section{Verification Strategy and Current Status}
+
+\subsection{Verification Approach in Repository}
+The repository contains a dedicated testbench named \texttt{sim/test\_speedometer\_tb.v}. It generates a 100\,MHz clock, applies reset, produces quadrature transitions through helper tasks, captures measurement results at \texttt{timer\_done}, and requests VCD waveform dumping. The testbench is aligned to the implemented RTL behavior: the speed unit is cm/s, the scale factor is \texttt{pulse\_count * 16}, and the overspeed threshold is 200\,cm/s.
+
+\subsection{Important Verification Observation}
+The earlier signal-name mismatch in the simulation file has been corrected so that the testbench now references the implemented internal speed signal \texttt{speed\_cm\_s}. The verification flow is therefore consistent with the checked-in top-level RTL and can be used to generate reproducible simulation evidence for the report.
+
+\begin{table}[H]
+\caption{Simulation scenarios implemented in the repository testbench}
+\centering
+\begin{tabular}{|p{0.8cm}|p{2.2cm}|p{3.8cm}|}
+\hline
+\textbf{Test} & \textbf{Intent} & \textbf{Expected behavior} \\
+\hline
+1 & Low speed     & 8 valid transitions, 128\,cm/s, LED remains low \\
+\hline
+2 & Below threshold & 12 valid transitions, 192\,cm/s, LED remains low \\
+\hline
+3 & Overspeed    & 16 valid transitions, 256\,cm/s, LED assertion observed \\
+\hline
+4 & Invalid transitions & Illegal quadrature jumps do not increment the counter \\
+\hline
+5 & Glitch rejection & Short glitches are rejected by the IR input filters \\
+\hline
+6 & Zero speed    & No motion produces zero measured speed \\
+\hline
+7 & Display hold  & Last non-zero displayed value persists into the next zero window \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Recommended Simulation Evidence to Insert}
+With the corrected and expanded testbench now present in the project workspace, the following screenshots can be generated from Vivado or any equivalent simulator and inserted into the final report.
+
+\placeholderfigure{2.1in}{Insert behavioral simulation waveform showing reset, filtered IR inputs, pulse count, timer\_done, and display-related outputs.}
+\placeholderfigure{2.1in}{Insert waveform showing an overspeed case in which \texttt{red\_led} becomes high.}
+\placeholderfigure{2.1in}{Insert waveform showing zero-speed behavior and display clearing after the hold interval.}
+
+\subsection{Functional Checks to Perform on Hardware}
+The following checks should be completed on the programmed board and recorded briefly in the final oral or written presentation.
+\begin{enumerate}
+\item Verify that BTNC clears the displayed value and internal measurement state.
+\item Verify that valid sensor motion produces a non-zero display.
+\item Verify that invalid or noisy toggles do not create excessive counts.
+\item Verify that the display holds the last non-zero reading for roughly five seconds.
+\item Verify that the red LED turns on above the chosen threshold.
+\item Verify that the displayed digits correspond to the intended calibration constant.
+\end{enumerate}
+
+% ─── Section 11 ──────────────────────────────────────────────────────────────
+\section{Expected Implementation Results}
+
+\subsection{Resource Utilization Table}
+The table below is provided in fillable form so that the final synthesis report from Vivado can be copied directly into the document.
+
+\begin{table}[H]
+\caption{Vivado synthesis utilization summary to insert}
+\centering
+\begin{tabular}{|p{1.8cm}|p{1.3cm}|p{1.5cm}|p{1.5cm}|}
+\hline
+\textbf{Resource} & \textbf{Used} & \textbf{Available} & \textbf{Utilization} \\
+\hline
+LUT  & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+FF   & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+IO   & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+BUFG & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+DSP  & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+BRAM & \blankline{0.9cm} & \blankline{0.9cm} & \blankline{0.9cm} \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Timing Summary Table}
+
+\begin{table}[H]
+\caption{Timing closure summary to insert from implementation report}
+\centering
+\begin{tabular}{|p{3.2cm}|p{3.5cm}|}
+\hline
+\textbf{Metric} & \textbf{Value} \\
+\hline
+Target clock period & 10.00\,ns \\
+\hline
+Achieved WNS        & \blankline{2.2cm} \\
+\hline
+Achieved TNS        & \blankline{2.2cm} \\
+\hline
+Worst hold slack    & \blankline{2.2cm} \\
+\hline
+Timing met?         & \blankline{2.2cm} \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Power and Device Notes}
+
+\begin{table}[H]
+\caption{Optional power and hardware summary}
+\centering
+\begin{tabular}{|p{3.2cm}|p{3.5cm}|}
+\hline
+\textbf{Item} & \textbf{Insert Value} \\
+\hline
+Total on-chip power      & \blankline{2.2cm} \\
+\hline
+Junction temperature     & \blankline{2.2cm} \\
+\hline
+Bitstream generation time & \blankline{2.2cm} \\
+\hline
+Programming interface used & \blankline{2.2cm} \\
+\hline
+\end{tabular}
+\end{table}
+
+% ─── Section 12 ──────────────────────────────────────────────────────────────
 \section{Discussion}
-Velox-RTL demonstrates that useful sensor-processing functionality can be realized with modest RTL complexity. The architecture avoids microcontroller firmware and floating-point computation, instead relying on synchronous counters and integer arithmetic. This makes the design easy to understand and appropriate for introductory FPGA coursework, especially when the educational objective is to connect signal acquisition, timing, arithmetic, and display control inside one hardware design.
 
-At the same time, the current implementation reflects a calibrated pulse-rate measurement system rather than a direct physics-based time-of-flight estimator. The speed conversion constant is embedded in logic, so portability to a different wheel, encoder resolution, or sensing geometry requires recalibration. The display path is also limited to three visible decimal digits, which is sufficient for the current operating range but not ideal for larger values.
+The current design has strengths that are as follows.
+The project has a number of strengths that make it suitable for a COA/FPGA demonstration. It can be grasped in a single sitting, but it has enough to demonstrate actual tradeoffs in digital design. It employs synchronous counting, arithmetic conversion, active output driving and human-visible indication. The code is also realistic: it already documents fixes concerning width and refresh rate, which implies active debugging as opposed to shallow assembly.
 
-\section{Future Work}
-Several improvements are natural extensions of the present design. First, the calibration factor can be replaced by a parameterized conversion model derived from known wheel circumference or object travel distance. Second, the display path can be extended to four digits and optional unit indicators. Third, synchronizer stages can be added ahead of the input filters if the external IR signals are highly asynchronous to the FPGA clock. Finally, the project could be expanded with synthesis reports, formal assertions, and hardware measurements collected directly from the Nexys A7 platform.
+\subsection{Design Limitations}
+The current implementation is not without its limitations and these need to be honestly mentioned in the report.
+\begin{enumerate}
+\item The speed equation is coded in hard by a constant multiplier and thus relies on external calibration assumptions.
+\item The speed shown is restricted to three decimal places although the internal value may be more than 999.
+\item The existing input cleaning technique is handy but not a formal synchronizer chain.
+\item Counts only forward quadrature transitions.
+\item The testbench being checked in needs to be corrected in terms of naming before its results can be reproduced.
+\item Repository comments have some inconsistencies with the synthesizable behavior and cannot be mindlessly copied into the final narrative.
+\end{enumerate}
 
+\subsection{Suggested Future Scope}
+In case the project is continued in a later semester or demonstration, the following would be technically significant.
+\begin{enumerate}
+\item Add an appropriate synchronizer before the filter to each asynchronous IR input.
+\item Change the constant multiplier to a configurable calibration register or switch input.
+\item Use explicit units of display like cm/s, m/s or km/h.
+\item Increase dynamic range by displaying more than four digits.
+\item Add full quadrature interpretation bidirectional motion detection.
+\item Measure values to UART, VGA, or external memory and analyze.
+\item Include a finite state machine to provide better control and diagnostics.
+\end{enumerate}
+
+% ─── Section 13 ──────────────────────────────────────────────────────────────
 \section{Conclusion}
-This paper described a standard RTL implementation of an FPGA-based speedometer for the Nexys A7 board. The design combines IR sensor conditioning, quadrature transition counting, fixed-window timing, integer speed conversion, seven-segment display driving, and threshold-based alerting in a single synchronous hardware system. The resulting architecture is small, direct, and well aligned with instructional FPGA development. As a project artifact, Velox-RTL provides a useful example of how sensing and user-interface logic can be integrated in Verilog without requiring a processor subsystem.
+In this report, a dual IR sensor based speed measurement system was reported in Verilog HDL on the Nexys A7 FPGA board. The architecture in the repository is a calibrated pulse-counting speedometer, rather than a generic time-of-flight system, and the report was deliberately authored to fit that implemented architecture. The system averages the two sensor inputs, counts the valid quadrature transitions within a 0.5\,s window, calculates the speed based on a fixed factor, shows the number on the seven segment display, and indicates overspeed via a special LED.
 
-\begin{thebibliography}{9}
+Academically, the project is a good introductory FPGA implementation due to its practical hardware design with visible outputs and distinct module boundaries. After filling in the remaining blanks with team information, the values of the exact hardware setup, and Vivado-generated screenshots, the report is to be a fully submission-ready document in the COA project.
 
-\bibitem{digilent}
-Digilent Inc., ``Nexys A7 FPGA Board Reference Manual,'' accessed Apr. 17, 2026. [Online]. Available: \url{https://digilent.com/reference/programmable-logic/nexys-a7/reference-manual}
+% ─── References ──────────────────────────────────────────────────────────────
+\begin{thebibliography}{00}
+\bibitem{digilent_ref}
+Digilent Inc., ``Nexys A7 FPGA Board Reference Manual,'' board documentation included in the project repository as \texttt{Nexys\_A7\_Reference\_Manual.pdf}.
 
-\bibitem{vivado}
-AMD, ``Vivado Design Suite,'' accessed Apr. 17, 2026. [Online]. Available: \url{https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vivado.html}
+\bibitem{digilent_mech}
+Digilent Inc., ``Mechanical Drawing for Nexys A7,'' included in the repository as \texttt{Nexys\_A7\_Dimensions/Mechanical\_Nexys\_A7.pdf}.
 
-\bibitem{repo}
-Velox-RTL project repository, local source files: \texttt{README.md}, \texttt{src/speedometer\_top\_nexys.v}, \texttt{sim/test\_speedometer\_tb.v}, and \texttt{constraints/nexys\_a7.xdc}.
+\bibitem{repo_src}
+Project Repository, ``Speedometer RTL, XDC, and Testbench Files,'' local source files: \texttt{src/speedometer\_top\_nexys.v}, \texttt{constraints/nexys\_a7.xdc}, and \texttt{sim/test\_speedometer\_tb.v}.
 
+\bibitem{harris}
+D.\,M. Harris and S.\,L. Harris, \textit{Digital Design and Computer Architecture}, 2nd~ed. Waltham, MA, USA: Morgan Kaufmann, 2012.
 \end{thebibliography}
+
+% ═════════════════════════════════════════════════════════════════════════════
+%  APPENDICES  (single-column for readability)
+% ═════════════════════════════════════════════════════════════════════════════
+\onecolumn
+
+\placeholderwide{2.4in}{Insert photograph of complete hardware arrangement, including board placement and IR sensors.}
+\placeholderwide{2.4in}{Insert final seven-segment display output photograph from hardware testing.}
+
+% ─── Appendix ──────────────────────────────────────────────────────────────
+\section*{Appendix: Important Code Listings}
+
+\subsection*{A.1\ \ Top-Level Integration and Display Hold Logic}
+\begin{lstlisting}
+module speedometer_top (
+    input  wire       clk,
+    input  wire       reset_btn,
+    input  wire       ir1,
+    input  wire       ir2,
+    output wire [6:0] seg,
+    output wire [7:0] an,
+    output wire       red_led
+);
+    wire        timer_done, timer_reset;
+    wire [8:0]  pulse_count;
+    wire [12:0] speed_cm_s;
+    wire [3:0]  hundreds_digit, tens_digit, ones_digit;
+    wire        ir1_clean, ir2_clean, reset_n;
+    reg  [12:0] displayed_speed;
+    reg  [29:0] hold_counter;
+
+    assign reset_n = ~reset_btn;
+
+    ir_filter f1 (.clk(clk), .signal_in(ir1), .signal_out(ir1_clean));
+    ir_filter f2 (.clk(clk), .signal_in(ir2), .signal_out(ir2_clean));
+
+    clock_divider #(.MAX_COUNT(49_999_999)) clk_div_inst (...);
+    pulse_counter pulse_cnt_inst (...);
+    speed_calculator speed_calc_inst (...);
+    bcd_to_digits bcd_conv_inst (...);
+    seven_segment_mux display_mux (...);
+    red_led_controller led_ctrl_inst (...);
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            displayed_speed <= 0;
+            hold_counter    <= 0;
+        end else begin
+            if (timer_done && pulse_count > 0) begin
+                displayed_speed <= speed_cm_s;
+                hold_counter    <= 30'd500_000_000;
+            end else if (timer_done && pulse_count == 0) begin
+                if (hold_counter == 0)
+                    displayed_speed <= 0;
+                else
+                    hold_counter <= hold_counter - 1;
+            end else if (hold_counter > 0) begin
+                hold_counter <= hold_counter - 1;
+            end
+        end
+    end
+endmodule
+\end{lstlisting}
+
+\subsection*{A.2\ \ IR Filter, Clock Divider, and Pulse Counter}
+\begin{lstlisting}
+module ir_filter (
+    input wire clk,
+    input wire signal_in,
+    output reg signal_out
+);
+    reg [2:0] shift;
+    always @(posedge clk) begin
+        shift <= {shift[1:0], signal_in};
+        if (shift == 3'b111)
+            signal_out <= 1;
+        else if (shift == 3'b000)
+            signal_out <= 0;
+    end
+endmodule
+
+module pulse_counter (
+    input  wire       clk,
+    input  wire       reset_n,
+    input  wire       ir1,
+    input  wire       ir2,
+    input  wire       timer_done,
+    input  wire       timer_reset,
+    output reg  [8:0] pulse_count_out
+);
+    wire [1:0] curr_state = {ir1, ir2};
+    reg  [1:0] prev_state;
+
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            pulse_count_out <= 0;
+            prev_state      <= 2'b00;
+        end else begin
+            if (timer_reset) begin
+                pulse_count_out <= 0;
+            end else if (!timer_done) begin
+                case ({prev_state, curr_state})
+                    4'b00_01, 4'b01_11, 4'b11_10, 4'b10_00:
+                        pulse_count_out <= pulse_count_out + 1;
+                    default: ;
+                endcase
+            end
+            prev_state <= curr_state;
+        end
+    end
+endmodule
+\end{lstlisting}
+
+\subsection*{A.3\ \ Speed Calculator, BCD Conversion, Seven-Segment Mux, and LED Logic}
+\begin{lstlisting}
+module speed_calculator (
+    input  wire [8:0]  pulse_count_in,
+    output reg  [12:0] speed_cm_s_out
+);
+    always @(*) begin
+        speed_cm_s_out = pulse_count_in * 13'd16;
+    end
+endmodule
+
+module bcd_to_digits (
+    input  wire [12:0] speed_in,
+    output reg  [3:0]  hundreds_out,
+    output reg  [3:0]  tens_out,
+    output reg  [3:0]  ones_out
+);
+    always @(*) begin
+        hundreds_out = (speed_in % 1000) / 100;
+        tens_out     = (speed_in % 100)  / 10;
+        ones_out     =  speed_in % 10;
+    end
+endmodule
+
+module red_led_controller (
+    input  wire [12:0] speed_in,
+    output reg         red_led_out
+);
+    parameter SPEED_LIMIT = 13'd200;
+    always @(*) begin
+        red_led_out = (speed_in > SPEED_LIMIT) ? 1'b1 : 1'b0;
+    end
+endmodule
+\end{lstlisting}
+
+\subsection*{A.4\ \ Key XDC Constraints}
+\begin{lstlisting}[language={}]
+set_property -dict { PACKAGE_PIN E3 IOSTANDARD LVCMOS33 } [get_ports { clk }];
+create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports { clk }];
+
+set_property -dict { PACKAGE_PIN N17 IOSTANDARD LVCMOS33 } [get_ports { reset_btn }];
+
+set_property -dict { PACKAGE_PIN C17 IOSTANDARD LVCMOS33 } [get_ports { ir1 }];
+set_property -dict { PACKAGE_PIN D18 IOSTANDARD LVCMOS33 } [get_ports { ir2 }];
+
+set_property -dict { PACKAGE_PIN T10 IOSTANDARD LVCMOS33 } [get_ports { seg[0] }];
+set_property -dict { PACKAGE_PIN R10 IOSTANDARD LVCMOS33 } [get_ports { seg[1] }];
+set_property -dict { PACKAGE_PIN K16 IOSTANDARD LVCMOS33 } [get_ports { seg[2] }];
+set_property -dict { PACKAGE_PIN K13 IOSTANDARD LVCMOS33 } [get_ports { seg[3] }];
+set_property -dict { PACKAGE_PIN P15 IOSTANDARD LVCMOS33 } [get_ports { seg[4] }];
+set_property -dict { PACKAGE_PIN T11 IOSTANDARD LVCMOS33 } [get_ports { seg[5] }];
+set_property -dict { PACKAGE_PIN L18 IOSTANDARD LVCMOS33 } [get_ports { seg[6] }];
+
+set_property -dict { PACKAGE_PIN J17 IOSTANDARD LVCMOS33 } [get_ports { an[0] }];
+set_property -dict { PACKAGE_PIN J18 IOSTANDARD LVCMOS33 } [get_ports { an[1] }];
+set_property -dict { PACKAGE_PIN T9  IOSTANDARD LVCMOS33 } [get_ports { an[2] }];
+set_property -dict { PACKAGE_PIN H17 IOSTANDARD LVCMOS33 } [get_ports { red_led }];
+\end{lstlisting}
+
+\subsection*{A.5\ \ Simulation Testbench Excerpt}
+\begin{lstlisting}
+module test_speedometer_tb;
+    reg clk;
+    reg reset_btn;
+    reg ir1;
+    reg ir2;
+    wire [6:0] seg;
+    wire [7:0] an;
+    wire red_led;
+    integer i;
+
+    speedometer_top uut (
+        .clk(clk), .reset_btn(reset_btn), .ir1(ir1), .ir2(ir2),
+        .seg(seg), .an(an), .red_led(red_led)
+    );
+
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk;
+    end
+
+    task generate_quadrature_step;
+        input integer delay_ns;
+        begin
+            ir1 = 0; ir2 = 0; #delay_ns;
+            ir1 = 0; ir2 = 1; #delay_ns;
+            ir1 = 1; ir2 = 1; #delay_ns;
+            ir1 = 1; ir2 = 0; #delay_ns;
+        end
+    endtask
+endmodule
+\end{lstlisting}
 
 \end{document}
